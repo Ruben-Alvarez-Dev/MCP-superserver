@@ -1,0 +1,220 @@
+# Prometheus Alert Rules for MCP-SUPERSERVER
+
+groups:
+  - name: mcp-superserver-alerts
+    interval: 30s
+    rules:
+      # Service Health Alerts
+      - alert: MCPHubDown
+        expr: up{job="mcp-hub"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: mcp-hub
+        annotations:
+          summary: "MCP Hub is down"
+          description: "MCP Hub has been down for more than 1 minute"
+
+      - alert: Neo4jDown
+        expr: up{job="neo4j"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: neo4j
+        annotations:
+          summary: "Neo4j is down"
+          description: "Neo4j has been down for more than 2 minutes"
+
+      - alert: OllamaDown
+        expr: up{job="ollama"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: ollama
+        annotations:
+          summary: "Ollama is down"
+          description: "Ollama has been down for more than 2 minutes"
+
+      # Performance Alerts
+      - alert: HighResponseTime
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(mcp_request_duration_seconds_bucket[5m])) by (le, server)
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }}s for server {{ $labels.server }}"
+
+      - alert: VeryHighResponseTime
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(mcp_request_duration_seconds_bucket[5m])) by (le, server)
+          ) > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Very high response time detected"
+          description: "95th percentile response time is {{ $value }}s for server {{ $labels.server }}"
+
+      # Error Rate Alerts
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(mcp_requests_total{status=~"5.."}[5m])) by (server)
+          /
+          sum(rate(mcp_requests_total[5m])) by (server)
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for server {{ $labels.server }}"
+
+      - alert: CriticalErrorRate
+        expr: |
+          sum(rate(mcp_requests_total{status=~"5.."}[5m])) by (server)
+          /
+          sum(rate(mcp_requests_total[5m])) by (server)
+          > 0.15
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for server {{ $labels.server }}"
+
+      # Resource Usage Alerts
+      - alert: HighMemoryUsage
+        expr: |
+          container_memory_usage_bytes{container="mcp-hub"}
+          /
+          container_spec_memory_limit_bytes{container="mcp-hub"}
+          > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "MCP Hub memory usage is {{ $value | humanizePercentage }}"
+
+      - alert: CriticalMemoryUsage
+        expr: |
+          container_memory_usage_bytes{container="mcp-hub"}
+          /
+          container_spec_memory_limit_bytes{container="mcp-hub"}
+          > 0.95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical memory usage"
+          description: "MCP Hub memory usage is {{ $value | humanizePercentage }}"
+
+      - alert: HighCPUUsage
+        expr: |
+          sum(rate(container_cpu_usage_seconds_total{container="mcp-hub"}[5m]))
+          /
+          sum(container_spec_cpu_quota{container="mcp-hub"} / container_spec_cpu_period{container="mcp-hub"})
+          > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "MCP Hub CPU usage is {{ $value | humanizePercentage }}"
+
+      # Disk Space Alerts
+      - alert: LowDiskSpace
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/data"}
+          /
+          node_filesystem_size_bytes{mountpoint="/data"})
+          < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space on /data is {{ $value | humanizePercentage }}"
+
+      - alert: CriticalDiskSpace
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/data"}
+          /
+          node_filesystem_size_bytes{mountpoint="/data"})
+          < 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical disk space"
+          description: "Disk space on /data is {{ $value | humanizePercentage }}"
+
+      # Neo4j Specific Alerts
+      - alert: Neo4jHighCypherExecutionTime
+        expr: neo4j_cypher_execution_time_seconds{quantile="0.95"} > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Neo4j query time"
+          description: "95th percentile Cypher execution time is {{ $value }}s"
+
+      - alert: Neo4jManyActiveConnections
+        expr: neo4j_connections_active > 100
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "Many active Neo4j connections"
+          description: "Active connections: {{ $value }}"
+
+      # Ollama Specific Alerts
+      - alert: OllamaModelLoadFailure
+        expr: rate(ollama_model_load_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ollama model load failures"
+          description: "Model load error rate is {{ $value }} per second"
+
+      # Protocol Omega Alerts
+      - alert: LoggingSystemDown
+        expr: up{job="mcp-hub"} == 1 and rate(mcp_log_entries_total[5m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No log entries detected"
+          description: "Protocol Omega logging may be malfunctioning"
+
+  - name: mcp-superserver-recovery
+    interval: 30s
+    rules:
+      # Recovery Alerts
+      - alert: ServiceRecovered
+        expr: up{job="mcp-hub"} == 1
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: "MCP Hub is back up"
+          description: "MCP Hub has recovered"
+
+      - alert: ErrorRateRecovered
+        expr: |
+          sum(rate(mcp_requests_total{status=~"5.."}[5m])) by (server)
+          /
+          sum(rate(mcp_requests_total[5m])) by (server)
+          < 0.01
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Error rate recovered"
+          description: "Error rate for {{ $labels.server }} is back to normal"

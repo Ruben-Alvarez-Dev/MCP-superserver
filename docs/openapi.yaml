@@ -1,0 +1,494 @@
+openapi: 3.0.3
+info:
+  title: MCP-SUPERSERVER API
+  description: |
+    Unified AI Memory and Reasoning Hub API
+
+    MCP-SUPERSERVER provides a comprehensive REST API for AI memory and reasoning operations through multiple specialized servers.
+  version: 1.0.0
+  contact:
+    name: Ruben Alvarez
+    url: https://github.com/rubenalvarezdev/mcp-superserver
+    email: info@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: http://localhost:3000/v1
+    description: API v1 endpoint
+
+tags:
+  - name: Health
+    description: Health check and status endpoints
+  - name: Tools
+    description: MCP tool execution endpoints
+  - name: Metrics
+    description: Metrics and monitoring endpoints
+  - name: Neo4j
+    description: Neo4j graph memory operations
+  - name: Obsidian
+    description: Obsidian vault operations
+  - name: Ollama
+    description: Ollama model operations
+  - name: Sequential Thinking
+    description: Reasoning chain operations
+  - name: Task Master
+    description: Task management operations
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Get health status
+      description: Check the health status of the MCP Hub and all connected services
+      operationId: getHealth
+      responses:
+        '200':
+          description: Healthy status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: healthy
+                timestamp: '2024-01-15T10:30:00Z'
+                services:
+                  neo4j: healthy
+                  ollama: healthy
+                  obsidian: healthy
+                uptime: 3600
+        '503':
+          description: Service unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /metrics:
+    get:
+      tags: [Metrics]
+      summary: Get Prometheus metrics
+      description: Prometheus-compatible metrics endpoint
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Metrics in Prometheus format
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP mcp_requests_total Total number of MCP requests
+                # TYPE mcp_requests_total counter
+                mcp_requests_total{server="neo4j-memory",tool="create_entity"} 1234
+
+  /tools/call:
+    post:
+      tags: [Tools]
+      summary: Execute MCP tool
+      description: Execute an MCP tool through the REST API
+      operationId: callTool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolCallRequest'
+            example:
+              server: neo4j-memory
+              tool: create_entity
+              arguments:
+                label: Person
+                id: user-123
+                properties:
+                  name: John Doe
+                  email: john@example.com
+      responses:
+        '200':
+          description: Tool executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolCallResponse'
+              example:
+                success: true
+                result:
+                  entity:
+                    label: Person
+                    id: user-123
+                    name: John Doe
+                  internalId: 123
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Server or tool not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /tools:
+    get:
+      tags: [Tools]
+      summary: List available tools
+      description: Get a list of all available MCP tools across all servers
+      operationId: listTools
+      responses:
+        '200':
+          description: List of tools
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolsListResponse'
+
+  /tools/{serverName}:
+    get:
+      tags: [Tools]
+      summary: Get server tools
+      description: Get all tools available from a specific server
+      operationId: getServerTools
+      parameters:
+        - name: serverName
+          in: path
+          required: true
+          description: Name of the MCP server
+          schema:
+            type: string
+          example: neo4j-memory
+      responses:
+        '200':
+          description: Server tools
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerToolsResponse'
+        '404':
+          description: Server not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy, degraded]
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [healthy, unhealthy, unknown]
+        uptime:
+          type: integer
+          description: Uptime in seconds
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+      required:
+        - success
+        - error
+
+    ToolCallRequest:
+      type: object
+      required:
+        - server
+        - tool
+      properties:
+        server:
+          type: string
+          description: Name of the MCP server
+          example: neo4j-memory
+        tool:
+          type: string
+          description: Name of the tool to execute
+          example: create_entity
+        arguments:
+          type: object
+          description: Tool arguments (varies by tool)
+          additionalProperties: true
+
+    ToolCallResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        result:
+          type: object
+          additionalProperties: true
+          description: Tool result (varies by tool)
+        error:
+          type: string
+        executionTime:
+          type: number
+          description: Execution time in milliseconds
+
+    ToolsListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        servers:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              description:
+                type: string
+              toolCount:
+                type: integer
+              tools:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+
+    ServerToolsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        server:
+          type: string
+        tools:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              description:
+                type: string
+              inputSchema:
+                type: object
+
+    # Neo4j Schemas
+    Neo4jEntity:
+      type: object
+      properties:
+        label:
+          type: string
+          description: Entity label (e.g., Person, Project, Concept)
+        id:
+          type: string
+          description: Unique identifier
+        properties:
+          type: object
+          additionalProperties: true
+          description: Additional entity properties
+
+    Neo4jRelationship:
+      type: object
+      properties:
+        fromLabel:
+          type: string
+        fromId:
+          type: string
+        relationshipType:
+          type: string
+        toLabel:
+          type: string
+        toId:
+          type: string
+        properties:
+          type: object
+          additionalProperties: true
+
+    # Ollama Schemas
+    ChatMessage:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant]
+        content:
+          type: string
+
+    OllamaModel:
+      type: object
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+        modified:
+          type: string
+          format: date-time
+        digest:
+          type: string
+
+    # Task Schemas
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          type: string
+          enum: [critical, high, medium, low]
+        status:
+          type: string
+          enum: [pending, in_progress, completed, blocked, deferred, cancelled]
+        assignee:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        dueDate:
+          type: string
+          format: date-time
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        createdAt:
+          type: string
+          format: date-time
+
+    # Sequential Thinking Schemas
+    ReasoningChain:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        prompt:
+          type: string
+        goal:
+          type: string
+        status:
+          type: string
+          enum: [in_progress, completed, failed]
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReasoningStep'
+        createdAt:
+          type: string
+          format: date-time
+
+    ReasoningStep:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        stepNumber:
+          type: integer
+        thought:
+          type: string
+        stepType:
+          type: string
+          enum: [observation, analysis, inference, conclusion, question, hypothesis]
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        data:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+    # Obsidian Schemas
+    ObsidianNote:
+      type: object
+      properties:
+        filename:
+          type: string
+        frontmatter:
+          type: object
+          additionalProperties: true
+        body:
+          type: string
+        content:
+          type: string
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key authentication (optional, depends on configuration)
+
+security:
+  - ApiKeyAuth: []
+
+x-webhooks:
+  logEntry:
+    post:
+      summary: Log entry webhook
+      description: Webhook for receiving log entries from external systems
+      operationId: logEntry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - timestamp
+                - level
+                - message
+              properties:
+                timestamp:
+                  type: string
+                  format: date-time
+                level:
+                  type: string
+                  enum: [debug, info, warn, error]
+                message:
+                  type: string
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Log entry received
+        '400':
+          description: Invalid log entry
